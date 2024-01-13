@@ -1,0 +1,294 @@
+---
+title: "Comp 4442 Final Project CART"
+author: "Matt Ostendorf, Joey Beightol, Kurt Meyer, Logan Barger and Aaron Brommers"
+date: "2023-08-16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(kableExtra)
+library(dplyr)
+library(caTools)
+library(GGally)
+library(olsrr)
+library(tidyverse)
+library(ggpubr)
+library(corrplot)
+library(ISLR)
+library(rpart)
+library(rpart.plot)
+library(Metrics)
+library(rsample)
+library(scales)
+library(car)
+library(gridExtra)
+```
+
+
+#Purpose
+Movie box office sales in the United States is at the forefront of the nation's entertainment industry, captivating audiences and shaping cultural trends for decades. As a testament to the power of storytelling, the box office serves as a way to measure a film's success, drawing millions of moviegoers to theaters and providing an unforgettable cinematic experience. 
+
+Examining movie box office sales offers more than just a snapshot of a film's commercial success; it unveils the collective interests and preferences of audiences, reflecting societal tastes and values. Sales of goods is one of the best ways to help determine the success of a product, but is an extremely hard task to predict. Many factors need to be considered to help determine the success of a product. Utilizing past data and techniques taught in COMP4441 and COMP442 from the University of Denver's Masters of Data Science program, this report will share the best strategies to help predict the success of a movie, measured by the box office sales of the opening weekend utilizing the regression tree model analysis.
+
+
+#Regression Trees
+Regression trees are a type of decision tree algorithm used for regression analysis. They are a non-linear, non-parametric models that step recursively through the predictor variables and partition the data. They utilize an ‘if-else’ technique to partition the predictor variables, known as a split. The result is a tree-like structure that shows the predictor variables used to optimize an outcome variable. Regression trees offer a flexible and interpretable approach for regression analysis, providing insights into the relationships between predictors and the response variable. While regression tree analysis can be applied to various domains, they are particularly useful when dealing with non-linear relationships or when interpretability is desired. 
+
+Regression Tree Analysis is an important tool utilized in statistical analysis. Regression tree analysis is very important in machine learning, simulating neural networks, a leading concept in tech industry.
+
+
+#Data Set
+The data set used for this analysis includes the top 1,000 grossing films of all time. In this data set, the outcome variable is the domestic box office opening revenue. The data set will be used to help with the prediction of box office sales.
+
+##Cleaning of the Data
+Cleaning data is the first step in conducting any statistical analysis. Cleaning the data is important to create a data set that is useful for the analysis being conducted, and have a good understanding of what the data is representing before the analysis.
+
+For the purpose of the data set chosen for this report, the data was cleaned by removing any observation that did not contain information from one or more of the columns.
+```{r}
+#read in data to table
+dat.Fulldata = read.table("Final_Data.csv",sep=",",header = TRUE, fill =TRUE)
+attach(dat.Fulldata)
+
+#Filter data to remove missing data
+dat.data = data.frame(Rotten.Tomatoes, imdbRating, Metascore,New.Domestic.Open.Gross,Num.Theaters, Runtime, Released,Rated)
+dat.data = filter(dat.data, Rotten.Tomatoes != "?")
+dat.data = filter(dat.data, Metascore != "N/A")
+
+#Convert data to integers and double
+dat.data$Rotten.Tomatoes = as.numeric(gsub("%","",dat.data$Rotten.Tomatoes))
+dat.data$Runtime = as.numeric(gsub("min","",dat.data$Runtime))
+dat.data$imdbRating = dat.data$imdbRating *10
+dat.data$Metascore = as.numeric(dat.data$Metascore)
+
+#Add categorical encoding
+dat.data$Released <- as.Date(dat.data$Released, format= "%d-%b-%y")
+dat.data$Released <- format(dat.data$Released, "%B")
+
+#Create list of strings for month order
+month_order = c("January", "February", "March", "April", "May", "June","July","August", "September", "October", "November", "December")
+
+#Order data based on release month
+dat.data$Released = factor(dat.data$Released,levels = month_order,ordered = TRUE)
+
+# Convert categorical data to factors that can be used by regression tree model
+dat.data$Rated = as.factor(dat.data$Rated)
+dat.data$Released = as.factor(dat.data$Released)
+```
+
+#Analysis
+As mentioned above, the data first needs to be analyzed to determine if the Regression Tree Analysis method is a valid approach for the data provided. In determining if regression trees are a valid approach, the requirements must be looked at and assessed. This is shown below:
+
+##Requirements
+
+Data can be numerical or quantitative.
+
+Data needs to have at least ten observations. The model is more representative with more than 100-200 observations.     
+
+
+The outcome variable needs to be continuous and dependent on the predictor variable(s). 
+
+Must include one dependent variable and, at a minimum, one independent variable. 
+
+
+In the scatter plots below we have compared all numerical predictors with the response variable of domestic box office opening revenue. When we look at the plots below we see that the data for the most part is non-linear. Because of this factor, it makes a regression tree a better model compared to a multiple linear regression. It is also seen that in the scatter plots, none of the numerical predictors share a similar shape, showing that regression tree analysis may be helpful in the splitting of nodes.
+
+```{R}
+
+#Response variable
+variable_of_interest = "New.Domestic.Open.Gross"
+
+#Create vector of response variables
+other_variables = setdiff(names(dat.data), variable_of_interest)
+other_variables = other_variables[1:5]
+
+#Create scatter plots for each numeric variable
+plot_list = list()
+for (var in other_variables) {
+  p = ggplot(dat.data, aes_string(x = var, y = variable_of_interest)) +
+    geom_point() + scale_y_continuous(labels = label_dollar(scale = 1/1000000)) +
+    labs(title = paste("Domestic Open Gross Rev", "vs", var), x = var, y = "Domestic Open Gross ($ in M)") + theme(text = element_text(size = 7))
+  
+  plot_list[[var]] = p
+  #print(p)
+}
+
+#plot scatter plots
+grid.arrange(grobs = plot_list, ncol = 2)
+
+```
+
+
+When we plot a histogram our response variable (domestic opening gross revenue) we see that there is a small tail to the right, meaning we have a right skewed distribution of data. This means that we have some potentially influential points in our data set.
+
+```{r}
+hist(dat.data$New.Domestic.Open.Gross/1000000, xlab = "Domestic Open Gross ($ in M)", main = "Histogram of Domestic Open Gross")
+
+```
+
+Below are box plots to compare our categorical variables to our response variable of domestic box office opening revenue. Looking at the monthly released plot we see a handful of outliers with the majority of the boxes having a more concentrated data set (i.e. a narrow box). It is also seen in the released box plots that the median is relatively constant for all months except January, May, and December. In the rated box plot, we again see a handful of outliers. The median appears to be in the middle of the box (represented by the line).
+
+``` {R}
+#box plots
+ggplot(dat.data, aes(x= Released, y = New.Domestic.Open.Gross/1000000)) + geom_boxplot() + labs(title = 'Domestic Gross Open vs. Month of Release', y = 'Domestic Gross open [$ in M]')
+ggplot(dat.data, aes(x= Rated, y = New.Domestic.Open.Gross/1000000)) + geom_boxplot() + labs(title = 'Domestic Gross Open vs. Movie Rating', y = 'Domestic Gross open [$ in M]')
+
+```
+
+##Regression Tree Testing
+###Pruning
+A potential weakness of the regression tree analysis method is overfitting. This can be caused by utilizing too many predictor variables or too many splits within the model. By default, the rpart package in R attempts to minimize overfitting. In addition to the built-in capability of minimizing overfitting, it is common to run additional analysis to prune the regression tree manually. This report aims to share both methods and explain the process of pruning regression trees.
+
+There are a few ways to run the regression tree model. The first way is to run the regression tree model on the entirety of the predictor variables, and then prune the tree. This is done by first using the rpart function which splits the data set into subsets based on the values of predictor variables, creating a tree-like structure. It aims to find the best split at each node of the tree based on certain criteria (usually the squared errors for regression) to minimize the impurity or error in the resulting subsets. In this function, a cp value is included. This cp value is the complexity parameter. It is used as a tuning parameter during the tree-building process to control the trade-off between tree complexity (depth) and goodness of fit to the data. The complexity parameter helps to avoid over fitting, ensuring that the resulting tree is simple and generalizes well to unseen data. Purposely, a cp value is chosen very small, which results in an over fitted model. The pruning function is then used to remove nodes that cause the model to be overfitted. The end result is a fitted regression tree model.
+
+rpart by default is performing some automated tuning. It is applying a range of cost complexity values to prune the tree. In order to compare the errors, it performs a 10-fold cross validation test. On the test below we see a diminishing return after 8 splits and 9 terminal nodes.
+
+```{R}
+#Create regression tree model using rpart
+set.seed(1234)
+tree = rpart(New.Domestic.Open.Gross/1000000 ~ Rotten.Tomatoes + imdbRating + Metascore+Num.Theaters+Runtime+Rated+Released, data=dat.data, method = 'anova')
+#plot the tree
+rpart.plot(tree, main = "Regression Tree Model for Domestic Open Gross ($ in M)")
+#plot cross validation error based on cp value
+plotcp(tree)
+
+```
+Looking at the regression tree plot, we will discuss the path starting from the root node and following the rightmost path. Starting at the root node, the entire full model, the rpart function in R iterated through each point of the entire model and determined the predictor variable and split that resulted in the lowest least square residual was the number of theaters and the split was between 4003 and 4004 theaters. Following the right path, the node is split to be greater than 4004 theaters, this resulted in 15% of the data and 119M of the total gross open. R then determined that the predictor with the least square error of the remaining data was the runtime and is split between being greater than or less than 116 minutes. Following the path of being greater than 116 minutes leads to 10% of the data and 141M of the gross open. R finally determined imdb rating to be the least square residual and split between a lower than and greater than score of 81. The greater than 81 value for imdb rating resulted in 1% of the films and resulted in 238M of the gross open. This is the leaf node and cannot be split any further.
+
+
+To illustrate this more we will use the same model as above, but set the complexity parameter to 0. This means there is no penalty for a large tree and we can look at where the cp value is the smallest. If we were to leverage a full tree, we see the smallest error reduction after 9 terminal nodes. We see a slight increase in the error until 12 nodes with a slight dip until 20 nodes. Then the terminal nodes past 21 we actually see an increase in error in the model. Therefore we can prune our tree to 9 nodes and still achieve minimal error.
+
+
+```{R}
+#Create full model with overide, overfitted cp value
+set.seed(12345)
+tree.full = rpart(New.Domestic.Open.Gross ~ Rotten.Tomatoes + imdbRating + Metascore+Num.Theaters+Runtime+Rated+Released, data=dat.data, method = 'anova', control = rpart.control(cp = 0))
+#plot cross validation error based on cp value
+plotcp(tree.full)
+rpart.plot(tree.full)
+```
+Now looking at our pruned model again we can look at the CP table and see that an optimal tree of 8 splits with 9 leaf nodes has a cross-validated error of .565. For regression tree models we are looking for the tree with the smallest xerror.
+```{r}
+#display table of cp values, splits, and their respective errors
+tree$cptable
+```
+It is common to tune the tree to try and find a better model. We can do this by controlling the minsplit and maxdepth parameters. Minsplit is the minimum number of data points required to attempt to make a split. The default is 20. Maxdepth is the number of internal nodes between the root node and the terminal nodes. The default is 30.
+
+We will perform a grid search to tune our model to identify the optimal setting. We will use a range of minsplit from 10-20 and maxdepth from 8 to 23. This creates 176 different models.
+```{r}
+#creating all different combinations
+search_grid = expand.grid(minsplit = seq(10,20,1), maxdepth = seq(8,23,1))
+
+#total number of combinations
+nrow(search_grid)
+```
+```{r}
+#Create empty list to populate with cp values
+tree.search = list()
+#set new seed
+set.seed(123)
+#For loop going through all 121 combinations and populating list with regression tree model outputs based on cp value
+for (i in 1:nrow(search_grid)) {
+  minsplit = search_grid$minsplit[i]
+  maxdepth = search_grid$maxdepth[i]
+  
+  tree.search[[i]] = rpart(New.Domestic.Open.Gross ~ Rotten.Tomatoes + imdbRating + Metascore+Num.Theaters+Runtime+Rated+Released, data=dat.data
+                           , method = 'anova', control = list(minsplit = minsplit, maxdepth = maxdepth))
+}
+```
+
+Now we will extract the minimum error associated with the optimal cost complexity value for all the models. We will add a filter to show the 5 models with the lowest minimal error values.
+```{r}
+#Function to grab best cp value
+get_bestcp = function(best)  {
+  min = which.min(best$cptable[,"xerror"])
+  best_cp = best$cptable[min,"CP"]
+  
+}
+#function to grab minimum error
+get_min_error = function(best) {
+  min = which.min(best$cptable[,"xerror"])
+  best_xerror = best$cptable[min,"xerror"]
+}
+#search grid and display the table with minsplit, maxdepth, cp and error
+search_grid %>%
+  mutate(
+    cp = purrr::map_dbl(tree.search, get_bestcp),
+    error = purrr::map_dbl(tree.search, get_min_error)
+  ) %>%
+  arrange(error) %>% top_n(-5, wt = error)
+
+```
+By doing this process we are able to get a slightly better error of .489 compared to the .565 previously. Now we create our optimal model.
+
+```{r}
+#Create optimal tree based on minsplit, maxdepth and cp from code chunk above
+optimal_tree = rpart(New.Domestic.Open.Gross/1000000 ~ Metascore+Rotten.Tomatoes+imdbRating+Num.Theaters+Runtime+Rated+Released, data=dat.data, method = 'anova',
+                     control = list(minsplit = 18, maxdepth = 12, cp = 0.01	 ))
+#plot regression tree for visualization
+rpart.plot(optimal_tree,main = "Regression Tree Model for Domestic Open Gross ($ in M)")
+
+```
+
+To understand why the tree is splitting on specific nodes we created a feature importance plot (below). This chart shows how number of theaters was the most important variable with run time as second. 
+
+```{r}
+target = dat.data$New.Domestic.Open.Gross
+features = dat.data[, c('Rotten.Tomatoes', 'imdbRating', 'Metascore', 'Num.Theaters','Runtime','Released','Rated')]
+
+importance = optimal_tree$variable.importance
+feature_importance = data.frame(
+  Feature = names(importance),
+  Importance = round(importance, 2)
+  )
+
+feature_importance <- feature_importance[order(-feature_importance$Importance), ]
+
+# Create the feature importance plot
+ggplot(data = feature_importance, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "grey") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Feature", y = "Importance", title = "Feature Importance Plot")
+
+
+```
+
+
+#Results
+Comparing the two models, it is seen that both R and the manual model produced the same results. It is important to follow this process to better understand what is happening under the hood and cross-validate the methods.
+```{R}
+rpart.plot(tree)
+
+rpart.plot(optimal_tree)
+
+```
+
+In order to test how well our model works we chose a recently released movie that has done well at the box office. We ran our model and compared it to the actual domestic box office opening revenue (per Box Office Mojo).
+```{r}
+barbie <- data.frame(
+  Metascore = 80,
+  Num.Theaters = 4337,
+  Runtime = 116,
+  Rated = "PG-13",
+  Released = 7,
+  imdbRating = 75,
+  Rotten.Tomatoes = 88
+)
+barbie$Rated <- factor(barbie$Rated, levels = levels(dat.data$Rated))
+barbie$Released <- factor(barbie$Released, levels = levels(dat.data$Released), ordered = TRUE)
+predicted_opening_gross <- predict(optimal_tree, barbie) * 1000000
+predicted_full_tree = predict(tree.full, barbie)
+
+
+str_glue("The predicted value for the Barbie movie is ${format(predicted_opening_gross, big.mark = ',', scientific = FALSE, trim = TRUE, digits = 2)}.")
+str_glue("The predicted value for the Barbie movie using the over fit model is ${format(predicted_full_tree, big.mark = ',', scientific = FALSE, trim = TRUE, digits = 2)}.")
+str_glue("The actual Domestic Box Office Opening Revenue for Barbie was $162,022,044")
+```
+
+Our model predicted that opening weekend box office revenue for the movie Barbie should have been ~$143M, where in reality it came in at ~162M. 
+
+#Conclusion
+In conclusion, when looking at the feature importance and the regression tree, the number of theaters is a leading node split for the tree. This makes sense as the more availability of the movie for viewers the better it will perform at the box office. 
+
+Regression trees are robust models are easy to interpret. We were able to satisfy our goal of creating a model that could help predict the opening weekend revenue for major blockbuster movies.  
