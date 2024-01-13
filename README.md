@@ -1,4 +1,6 @@
 
+Group Project from Probability and Statistics 2
+
 Movie box office sales in the United States is at the forefront of the nation's entertainment industry, captivating audiences and shaping cultural trends for decades. As a testament to the power of storytelling, the box office serves as a way to measure a film's success, drawing millions of moviegoers to theaters and providing an unforgettable cinematic experience. 
 Examining movie box office sales offers more than just a snapshot of a film's commercial success; it unveils the collective interests and preferences of audiences, reflecting societal tastes and values. Sales of goods is one of the best ways to help determine the success of a product, but is an extremely hard task to predict. Many factors need to be considered to help determine the success of a product. This report will share the best strategies to help predict the success of a movie, measured by the box office sales of the opening weekend utilizing the regression tree model analysis.
 
